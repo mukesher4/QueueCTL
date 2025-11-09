@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+.env
+research/
+dist/
+queued.log
+queuectl.db
+queuectl.db-shm
+queuectl.db-wal
