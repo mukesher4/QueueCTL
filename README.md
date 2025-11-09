@@ -643,6 +643,10 @@ npm run test:watch
 npm run test:coverage
 ```
 
+### Video Demo
+
+[Watch the video demo](https://drive.google.com/file/d/1yjwKwIbD8O83d5m2XUY-BSwEJMYtf22r/view?usp=sharing)
+
 ### Test Scenarios
 
 The test suite covers all 5 required scenarios:
