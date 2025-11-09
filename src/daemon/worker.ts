@@ -39,12 +39,13 @@ async function processJob(jobObj: JobObj) {
 		jobObj.attempts += 1;
 		console.log(`Output:\n${stdout}`);
 		jobObj.state = "completed";
-		jobObj.locked_at = undefined;		
+		jobObj.locked_at = undefined;
 
 		updateJobPersistent(jobObj);
 
 	} catch (err) {
-		console.error(`Execution failed: ${(err as Error).message}`);
+		console.error(`Execution failed: ${(err as Error).message}` +
+			((err as any).code ? `Exit code: ${(err as any).code}` : ''));
 
 		jobObj.attempts += 1;
 

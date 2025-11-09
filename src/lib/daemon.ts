@@ -1,6 +1,5 @@
-import { State, CommObj, JobObj } from "../type.js";
+import { State, CommObj, JobObj, MetricsResult } from "../type.js";
 import { fork } from "child_process";
-import dotenv from "dotenv";
 import {
 	addJobPersistent,
 	updateJobPersistent,
@@ -9,7 +8,13 @@ import {
 	getConfig,
 	getAllJobs,
 	getJob,
-	getJobsFromState
+	getJobsFromState,
+	totalJobsCount,
+	completedJobsCount,
+	upTime,
+	totalCommands,
+	avgRunTime,
+	maxRunTime
 } from "../db/better-sqlite.js";
 
 const workers = new Map<number, ReturnType<typeof fork>>();
@@ -63,7 +68,8 @@ export async function enqueue(commObj: CommObj) {
 			locked_at: undefined,
 			timeout,
 			run_after,
-			priority: commObjJSON.priority ?? 0 
+			priority: commObjJSON.priority ?? 0,
+			started_at: null
 		};
 		
 		addJobPersistent(jobObj);
@@ -241,5 +247,26 @@ export function config(commObj: CommObj) {
 		} else {
 			throw new Error(`Error configuring: ${String(err)}`);
 		}
+	}
+}
+
+export function metrics() {
+	try {
+		const result: MetricsResult = {
+			total_jobs: totalJobsCount(),
+			completed_jobs: completedJobsCount(),
+			uptime: String(upTime()) + " min",
+			total_commands: totalCommands(),
+			average_runtime: avgRunTime(),
+			max_runtime: maxRunTime()
+		};
+
+		return { success: true, message: result };
+	} catch (err) {
+		if (err instanceof Error) {
+			throw new Error(`Error generating metrics: ${err.message}`);
+		} else {
+			throw new Error(`Error generating metrics: ${String(err)}`);
+		}	
 	}
 }

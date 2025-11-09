@@ -19,9 +19,19 @@ export interface JobObj {
 	timeout: number;
 	run_after: string;
 	priority: number;
+	started_at: string | null;
 };
 
 export interface IPCObj {
 	result: boolean;
 	message: string;
+}
+
+export interface MetricsResult {
+  total_jobs: number;
+  completed_jobs: number;
+  uptime: string;
+  total_commands: number;
+  average_runtime: number;
+  max_runtime: number;
 }

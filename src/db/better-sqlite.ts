@@ -20,7 +20,8 @@ export function initDB() {
 			locked_at DATETIME,
 			timeout INT DEFAULT 5000,
 			run_after DATETIME DEFAULT CURRENT_TIMESTAMP,
-			priority INT DEFAULT 0
+			priority INT DEFAULT 0,
+			started_at DATETIME
 		)
 	`).run();
 
@@ -37,6 +38,30 @@ export function initDB() {
 			('backoff', NULL),
 			('delay-base', NULL),
 			('timeout', NULL)
+	`).run();
+
+	db.prepare(`
+		CREATE TABLE IF NOT EXISTS metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			daemon_startup DATETIME DEFAULT CURRENT_TIMESTAMP,
+			total_commands INT DEFAULT 0
+		)
+	`).run();
+}
+
+export function initMetrics() {
+	const isoNow = new Date().toISOString();
+	db.prepare(`
+		INSERT INTO metrics (daemon_startup, total_commands)
+		VALUES (?, 0)
+	`).run(isoNow);
+}
+
+export function incrementCommandMetrics() {
+	db.prepare(`
+		UPDATE metrics
+		SET total_commands = total_commands + 1
+		WHERE id = (SELECT id FROM metrics ORDER BY id DESC LIMIT 1)
 	`).run();
 }
 
@@ -71,11 +96,11 @@ export function pollAndLock(): JobObj | null {
 			state IN ('pending', 'failed', 'processing')
 			AND (
 				locked_at IS NULL
-				OR DATETIME(locked_at, '+' || (timeout / 1000.0) || ' seconds') < CURRENT_TIMESTAMP
+				OR datetime(locked_at, '+' || (timeout / 1000.0) || ' seconds') < strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')
 			)
 			AND (
 				run_after IS NULL
-				OR DATETIME(run_after) <= CURRENT_TIMESTAMP
+				OR datetime(run_after) <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')
 			)
 		ORDER BY priority DESC, created_at ASC
 		LIMIT 1
@@ -85,8 +110,9 @@ export function pollAndLock(): JobObj | null {
 		UPDATE jobs
 		SET
 			state = 'processing',
-			locked_at = CURRENT_TIMESTAMP,
-			updated_at = CURRENT_TIMESTAMP
+			locked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc'),
+			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc'),
+			started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')
 		WHERE id = ?
 	`);
 
@@ -130,7 +156,7 @@ export function updateJobPersistent(jobObj: JobObj) {
 		SET attempts = COALESCE(?, attempts),
 			max_retries = COALESCE(?, max_retries),
 			state = COALESCE(?, state),
-			updated_at = CURRENT_TIMESTAMP,
+			updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc'),
 			locked_at = ?,
 			timeout = COALESCE(?, timeout),
 			run_after = COALESCE(?, run_after)
@@ -189,4 +215,64 @@ export function getJobsFromState(state: State): JobObj[] {
 	`);
 
 	return stmt.all(state) as JobObj[];
+}
+
+// metrics
+
+export function totalJobsCount(): number {
+    const r = db.prepare(`SELECT COUNT(*) AS c FROM jobs`).get() as { c: number };
+    return r.c;
+}
+
+export function completedJobsCount(): number {
+    const r = db.prepare(
+        `SELECT COUNT(*) AS c FROM jobs WHERE state = 'completed'`
+    ).get() as { c: number };
+    return r.c;
+}
+
+export function upTime(): number {
+    const row = db.prepare(
+        `SELECT strftime('%s', daemon_startup) AS start_time FROM metrics ORDER BY id DESC LIMIT 1`
+    ).get() as { start_time: number } | undefined;
+    
+    if (!row) return 0;
+    
+    const currentTime = db.prepare(`SELECT strftime('%s', 'now', 'utc') AS now`).get() as { now: number };
+    const diff = currentTime.now - row.start_time;
+
+    return Math.ceil(diff / 60);
+}
+
+export function totalCommands(): number {
+    const r = db.prepare(
+        `SELECT SUM(total_commands) AS total FROM metrics`
+    ).get() as { total: number | null };
+    return r.total ?? 0;
+}
+
+export function avgRunTime(): number {
+    const r = db.prepare(`
+        SELECT AVG(
+            strftime('%s', updated_at) - strftime('%s', started_at)
+        ) AS avg_rt
+        FROM jobs
+        WHERE state = 'completed' 
+            AND started_at IS NOT NULL 
+            AND updated_at IS NOT NULL
+    `).get() as { avg_rt: number | null };
+    return Math.round(r.avg_rt ?? 0);
+}
+
+export function maxRunTime(): number {
+    const r = db.prepare(`
+        SELECT MAX(
+            strftime('%s', updated_at) - strftime('%s', started_at)
+        ) AS max_rt
+        FROM jobs
+        WHERE state = 'completed' 
+            AND started_at IS NOT NULL 
+            AND updated_at IS NOT NULL
+    `).get() as { max_rt: number | null };
+    return r.max_rt ?? 0;
 }
