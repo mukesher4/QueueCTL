@@ -38,18 +38,55 @@ A production-grade CLI-based background job queue system with worker processes, 
    ```
 
 5. **Start the daemon:**
-   
-   In a terminal, start the daemon:
-   ```bash
-   node dist/src/daemon/daemon.js
-   ```
-   
-   You should see:
-   ```
-   Daemon is listening on /tmp/queuectl.sock
-   ```
-   
-   **Important:** Keep this terminal open. The daemon must run continuously.
+
+   You can run the daemon in two ways. The **preferred option** is to run it as a background service so it stays alive automatically.
+
+   **If your init system is \`systemd\`:**
+
+   1. Create a service file at:
+
+      ```
+      /etc/systemd/system/queuectl.service
+      ```
+
+   2. Add the following configuration:
+
+      ```
+      [Unit]
+      Description=QueueCTL Daemon
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /path/to/project/dist/src/daemon/daemon.js
+      WorkingDirectory=/path/to/project
+      Restart=always
+      User=YOUR_USERNAME
+      Group=YOUR_USERNAME
+      Environment=NODE_ENV=production
+
+      [Install]
+      WantedBy=multi-user.target
+      ```
+
+   3. Enable and start the service:
+
+      ```
+      sudo systemctl daemon-reload
+      sudo systemctl enable queuectl
+      sudo systemctl start queuectl
+      ```
+
+   4. Check whether the daemon is running:
+
+      ```
+      systemctl status queuectl
+      ```
+
+   **If you are *not* using \`systemd\`**, or you prefer running it manually:
+
+   Run the daemon directly from a terminal:
+
+
 
 6. **Verify installation:**
    
@@ -64,14 +101,6 @@ A production-grade CLI-based background job queue system with worker processes, 
    # Check status
    queuectl status
    ```
-
-### Running in Development Mode
-
-For development, you can run the daemon with custom paths:
-
-```bash
-DB_PATH=./dev-queuectl.db SOCKET_PATH=/tmp/queuectl-dev.sock node dist/src/daemon/daemon.js
-```
 
 ### Database Location
 
