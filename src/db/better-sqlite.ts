@@ -100,7 +100,13 @@ export function pollAndLock(): JobObj | null {
 			)
 			AND (
 				run_after IS NULL
-				OR datetime(run_after) <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', 'utc')
+				OR (
+					CASE 
+						WHEN instr(run_after, '.') > 0 
+						THEN datetime(substr(run_after, 1, instr(run_after, '.') - 1) || 'Z')
+						ELSE datetime(run_after)
+					END
+				) <= datetime('now', 'utc')
 			)
 		ORDER BY priority DESC, created_at ASC
 		LIMIT 1

@@ -59,11 +59,16 @@ async function processJob(jobObj: JobObj) {
 
 		jobObj.state = "failed";
 
-		let baseSec = Number(getConfig("delay-base")) / 1000;
+		const delayBase = Number(getConfig("delay-base")) || 5000;
+		let baseSec = delayBase / 1000;
 		if (baseSec < 1) baseSec = 1;
 
 		const delaySec = Math.pow(baseSec, jobObj.attempts);
 		const delayMs  = delaySec * 1000;
+		
+		// Set run_after to future time for exponential backoff
+		jobObj.run_after = new Date(Date.now() + delayMs).toISOString();
+		jobObj.locked_at = undefined;
 		
 		updateJobPersistent(jobObj);
 	}
