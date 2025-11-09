@@ -2,17 +2,6 @@
 
 A production-grade CLI-based background job queue system with worker processes, automatic retries with exponential backoff, and Dead Letter Queue (DLQ) support.
 
-## 📋 Table of Contents
-
-- [Setup Instructions](#setup-instructions)
-- [Usage Examples](#usage-examples)
-- [Architecture Overview](#architecture-overview)
-- [Assumptions & Trade-offs](#assumptions--trade-offs)
-- [Testing Instructions](#testing-instructions)
-- [Commands Reference](#commands-reference)
-- [Job Lifecycle](#job-lifecycle)
-- [Configuration](#configuration)
-
 ## 📋 Setup Instructions
 
 ### Prerequisites
@@ -607,51 +596,8 @@ while (!shutdownGracefully) {
 ### Simplifications Made
 
 1. **No Job Output Storage**: Job output is only logged, not stored in database
-2. **No Job Dependencies**: Jobs cannot depend on other jobs
-3. **No Job Groups/Batches**: Cannot group related jobs
-4. **No Web UI**: CLI-only interface (no dashboard)
-5. **No Job Cancellation**: Cannot cancel running jobs (only stop workers)
-6. **No Job Priorities Beyond 0/1**: Only normal (0) and high (1) priorities
-7. **No Distributed Locking**: Single-machine only (no multi-node support)
-8. **No Job Scheduling Beyond `run_after`**: No cron-like scheduling
-9. **No Job Result Callbacks**: No webhooks or callbacks on completion
-10. **No Job Metadata**: Limited to basic job fields (no custom metadata)
-
-### Future Improvements
-
-If this were a production system, consider:
-
-1. **Distributed System Support**: Redis/PostgreSQL for multi-node deployments
-2. **Job Output Storage**: Store job stdout/stderr in database
-3. **Web Dashboard**: Web UI for monitoring and management
-4. **Job Dependencies**: Support for job chains and dependencies
-5. **Advanced Scheduling**: Cron-like scheduling, recurring jobs
-6. **Job Cancellation**: Ability to cancel running jobs
-7. **Metrics Export**: Prometheus/StatsD integration
-8. **Job Result Callbacks**: Webhooks on job completion
-9. **Job Groups**: Batch processing, job groups
-10. **Custom Retry Strategies**: Configurable retry algorithms
-
-### Performance Considerations
-
-- **Database Locking**: Uses `BEGIN IMMEDIATE` which may cause contention with many workers
-- **Polling Interval**: 1-second polling may be too slow for high-throughput scenarios
-- **Worker Overhead**: Each worker is a full Node.js process (memory overhead)
-- **No Connection Pooling**: Direct database connections (sufficient for this scale)
-
-### Security Considerations
-
-- **Command Execution**: Workers execute arbitrary commands (security risk)
-- **No Sandboxing**: Jobs run with daemon's permissions
-- **No Authentication**: IPC socket has no authentication
-- **No Input Validation**: Limited validation of job commands
-
-**Note:** This is a development/assignment project. Production use would require:
-- Command sandboxing
-- Input validation
-- Authentication/authorization
-- Rate limiting
-- Audit logging
+2. **No Web UI**: CLI-only interface (no dashboard)
+3. **No Job Priorities Beyond 0/1**: Only normal (0) and high (1) priorities
 
 ## 🧪 Testing Instructions
 
