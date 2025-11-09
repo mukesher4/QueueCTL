@@ -5,6 +5,7 @@ import { promisify } from "util";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import { initDB, initMetrics } from "../src/db/better-sqlite.js";
 
 const execAsync = promisify(exec);
 // Create unique test DB for each test run
@@ -17,7 +18,7 @@ let db: Database.Database;
 // Helper to run queuectl commands
 async function runQueuectl(cmd: string): Promise<{ stdout: string; stderr: string }> {
   try {
-    return await execAsync(`queuectl ${cmd}`);
+    return await execAsync(`SOCKET_PATH=${SOCKET_PATH} queuectl ${cmd}`);
   } catch (error: any) {
     // Return stdout/stderr even on error
     return {
@@ -71,17 +72,78 @@ beforeAll(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
   if (fs.existsSync(SOCKET_PATH)) fs.unlinkSync(SOCKET_PATH);
 
+  // Open test database and initialize schema
+  db = new Database(TEST_DB);
+  db.pragma('journal_mode = WAL');
+  
+  // Initialize database schema
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      command TEXT NOT NULL,
+      state TEXT DEFAULT 'pending',
+      attempts INT DEFAULT 0,
+      max_retries INT DEFAULT 3,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      locked_at DATETIME,
+      timeout INT DEFAULT 5000,
+      run_after DATETIME DEFAULT CURRENT_TIMESTAMP,
+      priority INT DEFAULT 0,
+      started_at DATETIME
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS config (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `).run();
+  
+  db.prepare(`
+    INSERT OR IGNORE INTO config (key, value)
+    VALUES
+      ('max-retries', NULL),
+      ('backoff', NULL),
+      ('delay-base', NULL),
+      ('timeout', NULL)
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      daemon_startup DATETIME DEFAULT CURRENT_TIMESTAMP,
+      total_commands INT DEFAULT 0
+    )
+  `).run();
+
+  // Initialize metrics
+  const isoNow = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO metrics (daemon_startup, total_commands)
+    VALUES (?, 0)
+  `).run(isoNow);
+
   // Start daemon
   daemonProcess = spawn("node", ["dist/src/daemon/daemon.js"], {
     env: { ...process.env, DB_PATH: TEST_DB, SOCKET_PATH },
     stdio: "pipe",
   });
 
-  // Wait for daemon to start
-  await wait(1500);
-
-  // Open test database
-  db = new Database(TEST_DB);
+  // Wait for daemon to start and initialize
+  await wait(2000);
+  
+  // Verify daemon is running by checking socket exists
+  let retries = 0;
+  while (!fs.existsSync(SOCKET_PATH) && retries < 10) {
+    await wait(200);
+    retries++;
+  }
+  
+  if (!fs.existsSync(SOCKET_PATH)) {
+    throw new Error("Daemon failed to start - socket not found");
+  }
 });
 
 afterAll(async () => {
@@ -113,6 +175,9 @@ describe("QueueCTL Test Scenarios", () => {
     // Enqueue a simple job
     await runQueuectl(`enqueue '{"id":"test1","command":"echo hello"}'`);
 
+    // Wait a bit for the job to be written to database
+    await wait(500);
+
     // Verify job was created
     let job = getJob("test1");
     expect(job).toBeDefined();
@@ -143,6 +208,9 @@ describe("QueueCTL Test Scenarios", () => {
     await runQueuectl(
       `enqueue '{"id":"fail1","command":"nonexistent-command-xyz123"}'`
     );
+
+    // Wait a bit for the job to be written to database
+    await wait(500);
 
     // Verify job was created
     let job = getJob("fail1");
@@ -181,6 +249,9 @@ describe("QueueCTL Test Scenarios", () => {
         `enqueue '{"id":"multi${i}","command":"echo job${i}"}'`
       );
     }
+
+    // Wait a bit for all jobs to be written to database
+    await wait(500);
 
     // Verify all jobs were created
     const allJobs = getAllJobs();
@@ -241,6 +312,10 @@ describe("QueueCTL Test Scenarios", () => {
 
     // Test duplicate job ID
     await runQueuectl(`enqueue '{"id":"duplicate","command":"echo test"}'`);
+    
+    // Wait a bit for the job to be written
+    await wait(500);
+    
     const result4 = await runQueuectl(
       `enqueue '{"id":"duplicate","command":"echo test2"}'`
     );
@@ -256,6 +331,9 @@ describe("QueueCTL Test Scenarios", () => {
   test("5. Job data survives restart", async () => {
     // Enqueue a job
     await runQueuectl(`enqueue '{"id":"persist1","command":"echo persist"}'`);
+
+    // Wait a bit for the job to be written to database
+    await wait(500);
 
     // VERIFY: Job exists in DB
     let job = getJob("persist1");

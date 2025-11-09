@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { State, JobObj } from "../type.js";
 
-const DB_PATH = path.join(process.cwd(), "queuectl.db");
+const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "queuectl.db");
 const db = new Database(DB_PATH);
 
 db.pragma('journal_mode = WAL');
