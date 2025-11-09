@@ -6,7 +6,6 @@ const DB_PATH = path.join(process.cwd(), "queuectl.db");
 const db = new Database(DB_PATH);
 
 db.pragma('journal_mode = WAL');
-// db.pragma('busy_timeout = 5000'); // why?
 
 export function initDB() {
 	db.prepare(`
@@ -20,7 +19,8 @@ export function initDB() {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			locked_at DATETIME,
 			timeout INT DEFAULT 5000,
-			run_after DATETIME DEFAULT CURRENT_TIMESTAMP
+			run_after DATETIME DEFAULT CURRENT_TIMESTAMP,
+			priority INT DEFAULT 0
 		)
 	`).run();
 
@@ -42,8 +42,8 @@ export function initDB() {
 
 export function addJobPersistent(jobObj: JobObj) {
 	const insert = db.prepare(`
-		INSERT INTO jobs (id, command, state, attempts, max_retries, created_at, updated_at, locked_at, timeout, run_after)
-		VALUES (@id, @command, @state, @attempts, @max_retries, @created_at, @updated_at, @locked_at, @timeout, @run_after)
+		INSERT INTO jobs (id, command, state, attempts, max_retries, created_at, updated_at, locked_at, timeout, run_after, priority)
+		VALUES (@id, @command, @state, @attempts, @max_retries, @created_at, @updated_at, @locked_at, @timeout, @run_after, @priority)
 	`).run({
 		id: jobObj.id,
 		command: jobObj.command,
@@ -54,7 +54,8 @@ export function addJobPersistent(jobObj: JobObj) {
 		updated_at: jobObj.updated_at,
 		locked_at: jobObj.locked_at,
 		timeout: jobObj.timeout,
-		run_after: jobObj.run_after
+		run_after: jobObj.run_after,
+		priority: jobObj.priority
 	});
 }
 
@@ -63,8 +64,6 @@ export function pollAndLock(): JobObj | null {
 	const commit = db.prepare('COMMIT;');
 	const rollback = db.prepare('ROLLBACK;');
 
-	// First, find a candidate job
-	// Include 'processing' jobs that have timed out (stuck jobs)
 	const findCandidate = db.prepare(`
 		SELECT id
 		FROM jobs
@@ -75,14 +74,13 @@ export function pollAndLock(): JobObj | null {
 				OR DATETIME(locked_at, '+' || (timeout / 1000.0) || ' seconds') < CURRENT_TIMESTAMP
 			)
 			AND (
-				run_after IS NULL 
+				run_after IS NULL
 				OR DATETIME(run_after) <= CURRENT_TIMESTAMP
 			)
-		ORDER BY created_at
+		ORDER BY priority DESC, created_at ASC
 		LIMIT 1
 	`);
 
-	// Update the job to processing state
 	const updateJob = db.prepare(`
 		UPDATE jobs
 		SET

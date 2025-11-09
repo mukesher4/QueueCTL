@@ -14,6 +14,14 @@ import {
 
 const workers = new Map<number, ReturnType<typeof fork>>();
 
+function validatePriority(priority: any): boolean {
+	if (priority === undefined) return false;
+	const p = Number(priority);
+
+	if (isNaN(p) || p < 0 || p > 1) return false;
+	return true;
+}
+
 export async function enqueue(commObj: CommObj) {
 	try {
 		if (!commObj.value) throw new Error("Job Object missing");
@@ -27,11 +35,23 @@ export async function enqueue(commObj: CommObj) {
 		const commObjJSON: {
 			id: string;
 			command: string;
+			run_after?: string;
+			priority?: number;
 		} = JSON.parse(commObj.value);
 
 		if (jobIdPresent(commObjJSON.id)) throw new Error("Job Id already present");
+		
+		if (commObjJSON.priority && !validatePriority(commObjJSON.priority)) throw new Error("Invalid priority value");
 
 		const currDateISO: string = new Date().toISOString();
+		
+		let run_after = currDateISO;
+		if (commObjJSON.run_after) {
+			const d = new Date(commObjJSON.run_after);
+			if (isNaN(d.getTime())) throw new Error("Invalid run_after value");
+			run_after = d.toISOString();
+		}
+
 		const jobObj: JobObj = {
 			id: commObjJSON.id,
 			command: commObjJSON.command,
@@ -42,7 +62,8 @@ export async function enqueue(commObj: CommObj) {
 			updated_at: currDateISO,
 			locked_at: undefined,
 			timeout,
-			run_after: currDateISO
+			run_after,
+			priority: commObjJSON.priority ?? 0 
 		};
 		
 		addJobPersistent(jobObj);
@@ -73,7 +94,7 @@ export function worker(commObj: CommObj) {
 			}
 		} else {
 			for (const [pid, proc] of workers) {
-				proc.kill();
+				proc.kill("SIGTERM");
 				console.log(`Worker ${pid} stopped`);
 				workers.delete(pid);
 			}

@@ -18,6 +18,7 @@ export interface JobObj {
 	locked_at: string | undefined;
 	timeout: number;
 	run_after: string;
+	priority: number;
 };
 
 export interface IPCObj {
